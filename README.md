@@ -22,14 +22,10 @@ Aplicação web para transcrever arquivos de áudio em texto usando o modelo Whi
 ### Setup
 
 ```bash
-cd /home/labubu/speech-analyzer
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
 ./start.sh
 ```
 
-Acesse a aplicação em `http://localhost:5000` ou `http://192.168.18.224:5000` (para acesso na rede local).
+Acesse a aplicação em `http://localhost:5000` ou `seu ip local` (para acesso na rede local).
 
 ## Funcionalidades
 
