@@ -148,7 +148,7 @@ A análise completa é exibida em um layout responsivo com:
 
 ```bash
 # Iniciar o servidor
-cd /home/labubu/projetos-LM
+cd /home/labubu/speech-analyzer
 source venv/bin/activate
 ./start.sh
 

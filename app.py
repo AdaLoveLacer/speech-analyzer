@@ -4,6 +4,7 @@ import logging
 import json
 import signal
 import re
+import gc
 import torch
 from flask import Flask, request, render_template, jsonify
 from flask_cors import CORS
@@ -19,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = '/home/labubu/projetos-LM/uploads'
+app.config['UPLOAD_FOLDER'] = '/home/labubu/speech-analyzer/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
 # CORS com permissão para Authorization header
@@ -32,14 +33,14 @@ CORS(app, resources={
 })
 
 ALLOWED_EXTENSIONS = {'mp3', 'wav', 'ogg', 'm4a', 'flac'}
-MODEL_PATH = '/home/labubu/projetos-LM/models/base.pt'
+MODEL_PATH = '/home/labubu/speech-analyzer/models/base.pt'
 
 _model_cache = {}
 
 # Carrega configurações persistentes se existirem (DEVE ESTAR ANTES DE USAR)
 def load_lmstudio_config_from_file():
     """Carrega configurações do arquivo de persistência"""
-    config_path = '/home/labubu/projetos-LM/.lmstudio_config.json'
+    config_path = '/home/labubu/speech-analyzer/.lmstudio_config.json'
     try:
         if os.path.exists(config_path):
             with open(config_path, 'r') as f:
@@ -53,7 +54,7 @@ def load_lmstudio_config_from_file():
 # Carrega config salva ou cria nova
 def save_lmstudio_config_to_file(config):
     """Salva configuração no arquivo de persistência"""
-    config_path = '/home/labubu/projetos-LM/.lmstudio_config.json'
+    config_path = '/home/labubu/speech-analyzer/.lmstudio_config.json'
     try:
         with open(config_path, 'w') as f:
             json.dump(config, f, indent=2)
@@ -111,7 +112,7 @@ def load_model():
         torch.cuda.empty_cache()
     
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    cache_path = '/home/labubu/projetos-LM/models'
+    cache_path = '/home/labubu/speech-analyzer/models'
     logger.info(f'Carregando modelo Whisper {model_name} em {device}...')
     
     try:
@@ -170,7 +171,7 @@ def upload():
                     torch.cuda.empty_cache()
                 
                 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-                cache_path = '/home/labubu/projetos-LM/models'
+                cache_path = '/home/labubu/speech-analyzer/models'
                 logger.info(f'Carregando modelo Whisper {whisper_model} em {device}...')
                 
                 model = whisper_load_model(
@@ -185,6 +186,14 @@ def upload():
             
             os.remove(filepath)
             logger.info('Arquivo removido após transcrição')
+            
+            # LIBERA VRAM IMEDIATAMENTE APÓS TRANSCRIÇÃO
+            # Isso garante espaço em vídeo para LM Studio carregar seus modelos pesados
+            _model_cache.clear()
+            del model
+            torch.cuda.empty_cache()
+            gc.collect()
+            logger.info('Modelo Whisper liberado da VRAM - espaço disponível para LM Studio')
             
             return jsonify({
                 'text': result['text'],
@@ -206,7 +215,7 @@ def health():
     
     if model is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        cache_path = '/home/labubu/projetos-LM/models'
+        cache_path = '/home/labubu/speech-analyzer/models'
         logger.info(f'Carregando modelo base para health check em {device}...')
         
         # Limpa cache anterior antes de carregar
@@ -293,6 +302,75 @@ def ask_with_prompt():
         }), 500
 
 
+@app.route('/api/analyze-text', methods=['POST'])
+def analyze_text():
+    """
+    Endpoint para analisar APENAS texto já transcrito (SEM recarregar Whisper)
+    Recebe: {text}
+    Retorna: {status, analysis}
+    
+    IMPORTANTE: Este endpoint NÃO recarrega o Whisper!
+    Use após já ter feito a transcrição para análise rápida sem duplicar processamento de VRAM.
+    """
+    try:
+        data = request.json
+        text = data.get('text', '')
+        
+        if not text:
+            return jsonify({
+                'status': 'error',
+                'message': 'Texto para análise é obrigatório'
+            }), 400
+        
+        logger.info(f'Analisando texto (SEM recarregar Whisper): {len(text)} caracteres')
+        
+        system_prompt = """Você é um especialista em análise de texto. Forneça uma análise estruturada em JSON:
+{
+  "summary": "resumo conciso em 2-3 frases",
+  "key_points": ["ponto1", "ponto2", "ponto3"],
+  "entities": ["pessoa/organização mencionada"],
+  "topics": ["tema1", "tema2"],
+  "sentiment": "positivo|negativo|neutro",
+  "confidence": 0.0-1.0
+}
+
+Responda APENAS com o JSON, sem markdown."""
+        
+        response = lm_client.chat.completions.create(
+            model=lmstudio_config['model'],
+            messages=[
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': f'Analise este texto:\n\n{text[:3000]}'}
+            ],
+            temperature=lmstudio_config['temperature'],
+            max_tokens=2000
+        )
+        
+        ai_response = response.choices[0].message.content if response.choices else ""
+        
+        if not ai_response:
+            return jsonify({
+                'status': 'error',
+                'message': 'LM Studio retornou resposta vazia'
+            }), 500
+        
+        logger.info(f'Análise concluída: {len(ai_response)} caracteres')
+        
+        return jsonify({
+            'status': 'ok',
+            'analysis': ai_response,
+            'model': lmstudio_config['model'],
+            'text_length': len(text)
+        })
+    
+    except Exception as e:
+        logger.error(f'Erro ao analisar texto: {str(e)}')
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
 @app.route('/api/test-lmstudio', methods=['POST'])
 def test_lmstudio():
     """
@@ -350,28 +428,38 @@ def config_lmstudio():
     try:
         data = request.json
         
+        # Valida se modelo foi fornecido
+        novo_modelo = data.get('model')
+        if not novo_modelo:
+            return jsonify({
+                'status': 'error',
+                'message': 'Modelo é obrigatório'
+            }), 400
+        
+        logger.info(f'Recebido POST /api/config-lmstudio:')
+        logger.info(f'  Modelo novo: {novo_modelo}')
+        logger.info(f'  Modelo antigo: {lmstudio_config["model"]}')
+        
         # Atualiza configuração com novos valores
-        lmstudio_config.update({
-            'url': data.get('url', lmstudio_config['url']),
-            'model': data.get('model', lmstudio_config['model']),
-            'token': data.get('token', ''),  # Opcional, pode ser vazio
-            'prompt_type': data.get('prompt_type', lmstudio_config['prompt_type']),
-            'temperature': float(data.get('temperature', lmstudio_config['temperature'])),
-            'max_tokens': int(data.get('max_tokens', lmstudio_config['max_tokens']))
-        })
+        lmstudio_config['url'] = data.get('url', lmstudio_config['url'])
+        lmstudio_config['model'] = novo_modelo  # Força atualizar modelo SEMPRE
+        lmstudio_config['token'] = data.get('token', '')
+        lmstudio_config['prompt_type'] = data.get('prompt_type', lmstudio_config['prompt_type'])
+        lmstudio_config['temperature'] = float(data.get('temperature', lmstudio_config['temperature']))
+        lmstudio_config['max_tokens'] = int(data.get('max_tokens', lmstudio_config['max_tokens']))
+        
+        logger.info(f'Config em memória atualizada: {lmstudio_config}')
         
         # Salva no arquivo de persistência
         save_lmstudio_config_to_file(lmstudio_config)
-        
-        logger.info(f'Config atualizada: url={lmstudio_config["url"]}, model={lmstudio_config["model"]}, token={lmstudio_config["token"][:20]}...')
+        logger.info(f'Config salva no arquivo: {lmstudio_config}')
         
         # Recria cliente OpenAI com nova configuração (ATUALIZA GLOBAL)
         lm_client = OpenAI(
             base_url=f"{lmstudio_config['url']}/v1",
             api_key=lmstudio_config['token'] if lmstudio_config['token'] else "not-provided"
         )
-        
-        logger.info(f'Cliente OpenAI recriado com token: {lmstudio_config["token"][:20] if lmstudio_config["token"] else "não fornecido"}...')
+        logger.info(f'Cliente OpenAI recriado com novo modelo: {lmstudio_config["model"]}')
         
         return jsonify({
             'status': 'ok',
@@ -391,6 +479,19 @@ def config_lmstudio():
             'status': 'error',
             'message': str(e)
         }), 500
+
+
+@app.route('/api/check-current-model', methods=['GET'])
+def check_current_model():
+    """
+    Endpoint para verificar qual modelo está REALMENTE sendo usado
+    """
+    return jsonify({
+        'status': 'ok',
+        'current_model': lmstudio_config['model'],
+        'lmstudio_url': lmstudio_config['url'],
+        'full_config': lmstudio_config
+    })
 
 
 @app.route('/api/load-lmstudio-config', methods=['GET'])
@@ -458,7 +559,7 @@ def transcribe_and_analyze():
                 torch.cuda.empty_cache()
             
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
-            cache_path = '/home/labubu/projetos-LM/models'
+            cache_path = '/home/labubu/speech-analyzer/models'
             logger.info(f'Carregando modelo Whisper {whisper_model} em {device}...')
             
             model = whisper_load_model(whisper_model, device=device, download_root=cache_path)
@@ -471,6 +572,13 @@ def transcribe_and_analyze():
         
         os.remove(filepath)
         logger.info('Arquivo removido após transcrição')
+        
+        # LIBERA WHISPER DA VRAM IMEDIATAMENTE APÓS TRANSCRIÇÃO
+        _model_cache.clear()
+        del model
+        torch.cuda.empty_cache()
+        gc.collect()
+        logger.info('Modelo Whisper liberado da VRAM - espaço disponível para LM Studio')
         
         # Prompt para LM Studio com análise + pesquisa + verificação de fatos
         system_prompt = """Você é um especialista em análise, pesquisa e verificação de informações. Sua tarefa é processar uma transcrição de áudio e fornecer uma análise completa.

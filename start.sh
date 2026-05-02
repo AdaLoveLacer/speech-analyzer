@@ -1,18 +1,24 @@
 #!/bin/bash
-cd /home/labubu/projetos-LM
+cd /home/labubu/speech-analyzer
 
-# Cria venv automaticamente se não existir
-if [ ! -d "venv" ]; then
-    echo "🚀 Criando virtual environment..."
+# Verifica e cria/recria venv se não existir ou estiver quebrada
+if [ ! -d "venv" ] || [ ! -f "venv/bin/python" ]; then
+    echo "Criando virtual environment..."
+    rm -rf venv 2>/dev/null || true
     python -m venv venv
 fi
 
 # Ativa venv
-source venv/bin/activate
+source venv/bin/activate 2>/dev/null || {
+    echo "Erro ao ativar venv, recriando..."
+    rm -rf venv
+    python -m venv venv
+    source venv/bin/activate
+}
 
 # Instala dependências do requirements.txt (se necessário)
 pip install -r requirements.txt --quiet 2>/dev/null || {
-    echo "⚠️ Erro ao instalar dependências, tentando instalação manual..."
+    echo "Erro ao instalar dependências, tentando instalação manual..."
     pip install flask==3.0.0 openai-whisper python-dotenv openai flask-cors --quiet
 }
 

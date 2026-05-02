@@ -344,23 +344,34 @@
                 
                 const data = await response.json();
                 const modelsContainer = document.getElementById('lmstudioModelSelect');
+                const modelAnterior = lmstudioConfig.model;
                 
                 // Limpa dropdown
                 modelsContainer.innerHTML = '';
                 
                 if (data.data && Array.isArray(data.data)) {
+                    let modelEncontrado = false;
+                    
                     data.data.forEach(model => {
                         const option = document.createElement('option');
                         option.value = model.id;
                         option.textContent = model.id || model.name || `Modelo ${model.size}`;
                         modelsContainer.appendChild(option);
+                        
+                        // Tenta manter modelo anterior selecionado
+                        if (model.id === modelAnterior) {
+                            modelEncontrado = true;
+                        }
                     });
                     
-                    // Seleciona primeiro modelo
-                    if (modelsContainer.options.length > 0) {
+                    // Seleciona modelo anterior se existir, senão primeiro
+                    if (modelEncontrado) {
+                        modelsContainer.value = modelAnterior;
+                        showConnectionStatus(`✅ Carregado: ${modelAnterior} (mantido)`, 'success');
+                    } else {
                         modelsContainer.selectedIndex = 0;
                         lmstudioConfig.model = modelsContainer.value;
-                        showConnectionStatus(`✅ Carregado: ${modelsContainer.options[0].textContent}`, 'success');
+                        showConnectionStatus(`✅ Carregado: ${modelsContainer.options[0].textContent} (primeiro)`, 'success');
                     }
                 } else if (data.id) {
                     // Resposta direta com ID do modelo
@@ -592,6 +603,8 @@
             const temperature = parseFloat(document.getElementById('lmstudioTemperature').value);
             const maxTokens = parseInt(document.getElementById('lmstudioMaxTokens').value);
             
+            console.log(`Salvando config: modelo=${model}, url=${url}`);
+            
             try {
                 saveStatus.style.display = 'none';
                 const response = await fetch('/api/config-lmstudio', {
@@ -604,20 +617,27 @@
                 });
                 
                 const data = await response.json();
+                console.log('Resposta config:', data);
                 
                 if (data.status === 'ok') {
-                    // Atualiza objeto global (mantém modelo exato)
-                    lmstudioConfig.url = url;
-                    lmstudioConfig.model = model;
+                    // Atualiza objeto global com valores confirmados do servidor
+                    lmstudioConfig.url = data.config.url;
+                    lmstudioConfig.model = data.config.model;
                     lmstudioConfig.token = token;
-                    lmstudioConfig.prompt_type = promptType;
-                    lmstudioConfig.temperature = temperature;
-                    lmstudioConfig.max_tokens = maxTokens;
+                    lmstudioConfig.prompt_type = data.config.prompt_type;
+                    lmstudioConfig.temperature = data.config.temperature;
+                    lmstudioConfig.max_tokens = data.config.max_tokens;
                     
-                    saveStatus.textContent = '✅ Configuração salva!';
+                    console.log(`Config salva! Modelo confirmado: ${lmstudioConfig.model}`);
+                    
+                    saveStatus.textContent = `✅ Configuração salva! Modelo: ${lmstudioConfig.model}`;
                     saveStatus.style.display = 'block';
                     
-                    // CARREGA MODELOS APÓS SALVAR
+                    // Aguarda 1 segundo antes de carregar novos modelos
+                    setTimeout(async () => {
+                        await fetchModels();
+                    }, 1000);
+
                     await fetchModels();
                 } else if (data.status === 'error') {
                     saveStatus.textContent = `❌ Erro: ${data.message}`;
