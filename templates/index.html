@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whisper Web UI</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .container { max-width: 900px; width: 100%; }
+        h1 { text-align: center; margin-bottom: 25px; font-size: 1.8rem; color: #00d9ff; }
+        
+        .controls { display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }
+        select, button { padding: 10px 15px; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; background: #0f3460; color: #eee; border: 1px solid #333; }
+        select:hover, button:hover { background: #1a2744; }
+        button.recording { background: #e94560; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        
+        .upload-area { border: 2px dashed #444; border-radius: 12px; padding: 30px; text-align: center; cursor: pointer; transition: all 0.3s; background: #16213e; margin-bottom: 20px; }
+        .upload-area:hover, .upload-area.dragover { border-color: #00d9ff; background: #1a2744; }
+        .upload-icon { font-size: 48px; margin-bottom: 15px; color: #666; }
+        .upload-text { color: #888; font-size: 1.1rem; }
+        .upload-hint { color: #666; font-size: 0.9rem; margin-top: 10px; }
+        input[type="file"] { display: none; }
+        
+        .recording-area { border: 2px dashed #444; border-radius: 12px; padding: 30px; text-align: center; cursor: pointer; transition: all 0.3s; background: #16213e; display: none; margin-bottom: 20px; }
+        .recording-area:hover, .recording-area.dragover { border-color: #e94560; background: #1a2744; }
+        .recording-area.recording { border-color: #e94560; background: #2d1f33; }
+        .record-icon { font-size: 48px; margin-bottom: 15px; color: #666; }
+        .record-text { color: #888; font-size: 1.1rem; }
+        
+        .result-area { display: none; }
+        .result-label { font-weight: bold; color: #888; margin-bottom: 10px; }
+        .result-text { background: #0f3460; border-radius: 8px; padding: 20px; min-height: 150px; white-space: pre-wrap; word-wrap: break-word; font-family: "Monaco", "Consolas", monospace; font-size: 1rem; line-height: 1.6; color: #00d9ff; border: 1px solid #333; max-height: 400px; overflow-y: auto; }
+        
+        .loading { display: none; text-align: center; padding: 20px; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #333; border-top-color: #00d9ff; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .status { color: #888; font-size: 0.9rem; }
+        
+        .error { background: #a33; padding: 15px; border-radius: 8px; margin-top: 20px; display: none; }
+        
+        .model-info { margin-top: 15px; padding: 10px; background: #0f3460; border-radius: 6px; font-size: 0.85rem; color: #888; display: none; }
+        
+        /* Painel de Configuração LM Studio - VISÍVEL POR PADRÃO */
+        .lmstudio-panel { display: block; margin-top: 20px; padding: 15px; background: #0f3460; border-radius: 8px; }
+        .lmstudio-panel.visible { display: block; }
+        .lmstudio-panel h3 { color: #00d9ff; margin-bottom: 15px; font-size: 1.1rem; }
+        .lmstudio-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+        .lmstudio-item label { display: block; color: #888; font-size: 0.85rem; margin-bottom: 4px; }
+        .lmstudio-item input, .lmstudio-item select { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #333; background: #1a2744; color: #eee; font-size: 14px; }
+        .lmstudio-item input:focus, .lmstudio-item select:focus { outline: none; border-color: #00d9ff; }
+        
+        /* Status de Conexão */
+        .connection-status { margin-bottom: 15px; padding: 10px; border-radius: 6px; font-size: 0.85rem; display: none; }
+        .connection-status.success { background: #0f3460; border: 1px solid #00d9ff; color: #00d9ff; display: block; }
+        .connection-status.error { background: #a33; border: 1px solid #e55; color: #fff; display: block; }
+        
+        /* Botão Salvar */
+        .save-btn { margin-top: 10px; width: 100%; padding: 12px; background: #00d9ff; color: #000; border: none; border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer; transition: all 0.3s; }
+        .save-btn:hover { background: #00b8d9; }
+        
+        /* Botão Processar com IA */
+        .process-ai-btn { display: none; margin-top: 15px; width: 100%; padding: 12px; background: #00d9ff; color: #000; border: none; border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer; transition: all 0.3s; }
+        .process-ai-btn:hover { background: #00b8d9; }
+        .process-ai-btn:disabled { background: #555; cursor: not-allowed; }
+        
+        /* Área de Resultado da IA */
+        .ai-result-area { display: none; margin-top: 20px; padding: 15px; background: #0f3460; border-radius: 8px; border: 1px solid #333; }
+        .ai-result-area.visible { display: block; }
+        .ai-result-label { font-weight: bold; color: #00d9ff; margin-bottom: 10px; font-size: 1rem; }
+        .ai-result-text { background: #1a2744; border-radius: 6px; padding: 15px; min-height: 200px; white-space: pre-wrap; word-wrap: break-word; font-family: "Monaco", "Consolas", monospace; font-size: 0.95rem; line-height: 1.6; color: #00ff88; max-height: 500px; overflow-y: auto; }
+        .ai-result-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #333; }
+        .ai-model-badge { background: #2d1f33; color: #888; padding: 4px 10px; border-radius: 4px; font-size: 0.8rem; }
+        
+        /* Área de Análise Completa */
+        .analysis-result-area { display: none; margin-top: 20px; padding: 15px; background: #0f3460; border-radius: 8px; border: 1px solid #333; }
+        .analysis-result-area.visible { display: block; }
+        .analysis-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #00d9ff; }
+        .analysis-title { font-weight: bold; color: #00d9ff; font-size: 1.2rem; }
+        .analysis-model-badge { background: #2d1f33; color: #888; padding: 4px 12px; border-radius: 6px; font-size: 0.85rem; }
+        .analysis-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin-top: 15px; }
+        .analysis-card { background: #1a2744; border-radius: 8px; padding: 15px; border: 1px solid #333; }
+        .analysis-card h4 { color: #00d9ff; margin-bottom: 10px; font-size: 1rem; display: flex; align-items: center; gap: 8px; }
+        .analysis-card p, .analysis-card ul { color: #00ff88; font-size: 0.9rem; line-height: 1.6; margin: 0; }
+        .analysis-card ul { padding-left: 20px; }
+        .fact-check-item { background: #16213e; border-radius: 6px; padding: 10px; margin-top: 8px; border-left: 3px solid #888; }
+        .fact-check-verified { border-left-color: #00d9ff; }
+        .fact-check-unverified { border-left-color: #e55; }
+        .fact-check-claim { color: #aaa; font-size: 0.85rem; margin-bottom: 4px; }
+        .fact-check-status { font-weight: bold; font-size: 0.8rem; }
+        .fact-check-verified .fact-check-status { color: #00d9ff; }
+        .fact-check-unverified .fact-check-status { color: #e55; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Whisper Transcrição</h1>
+        
+        <div class="controls">
+            <select id="modelSelect">
+                <option value="base">base (rápido, ~74M parâmetros)</option>
+                <option value="tiny">tiny (muito rápido, ~39M)</option>
+                <option value="base.en">base.en (inglês apenas, ~74M)</option>
+                <option value="tiny.en">tiny.en (inglês apenas, ~39M)</option>
+                <option value="small">small (~244M)</option>
+                <option value="small.en">small.en (inglês apenas, ~244M)</option>
+                <option value="medium">medium (~769M)</option>
+                <option value="medium.en">medium.en (inglês apenas, ~769M)</option>
+                <option value="large-v3">large-v3 (mais preciso, ~1.55B)</option>
+                <option value="turbo">turbo (~809M, otimizado)</option>
+            </select>
+            
+            <button id="recordBtn" onclick="toggleRecording()">🎤 Gravar Áudio</button>
+        </div>
+        
+        <!-- Painel de Configuração LM Studio -->
+        <div class="lmstudio-panel" id="lmstudioPanel">
+            <h3>⚡ Configuração LM Studio</h3>
+            <div class="connection-status" id="connectionStatus">Verificando conexão...</div>
+            <div class="lmstudio-grid">
+                <div class="lmstudio-item">
+                    <label for="lmstudioUrl">URL do LM Studio:</label>
+                    <input type="text" id="lmstudioUrl" value="http://localhost:1234" placeholder="http://localhost:1234">
+                </div>
+                <div class="lmstudio-item">
+                    <label for="lmstudioModel">Modelo:</label>
+                    <select id="lmstudioModelSelect">
+                        <option value="llama3.2:3b" selected>Carregando modelos...</option>
+                    </select>
+                </div>
+                <div class="lmstudio-item">
+                    <label for="lmstudioToken">API Token (opcional):</label>
+                    <input type="password" id="lmstudioToken" placeholder="Deixe vazio para não usar token">
+                </div>
+                <div class="lmstudio-item">
+                    <label for="lmstudioPromptType">Tipo de Prompt:</label>
+                    <select id="lmstudioPromptType">
+                        <option value="auto_research">Auto Research (decide pesquisar)</option>
+                        <option value="research_first">Pesquisar Primeiro</option>
+                        <option value="summary_only">Apenas Resumo</option>
+                    </select>
+                </div>
+                <div class="lmstudio-item">
+                    <label for="lmstudioTemperature">Temperatura:</label>
+                    <input type="number" id="lmstudioTemperature" value="0.7" step="0.1" min="0" max="2">
+                </div>
+                <div class="lmstudio-item">
+                    <label for="lmstudioMaxTokens">Max Tokens:</label>
+                    <input type="number" id="lmstudioMaxTokens" value="2000" step="100" min="100">
+                </div>
+            </div>
+            
+            <!-- Botão Salvar -->
+            <button class="save-btn" id="saveBtn" onclick="saveLmstudioConfig()">💾 Salvar Configuração</button>
+            
+            <!-- Botão de Análise Completa -->
+            <button class="save-btn" style="background:#00ff88; margin-top:10px; width:100%;" id="analyzeBtn" onclick="processTranscriptionAndAnalysis()">🔬 Analisar com Pesquisa e Verificação</button>
+            
+            <!-- Botão Teste MCP Search -->
+            <button class="save-btn" style="background:#ff9500; margin-top:10px; width:100%;" id="testMcpBtn" onclick="testMcpSearch()">Testar MCP Search</button>
+            
+            <div class="connection-status" id="saveStatus" style="display:none; background:#0f3460; border:1px solid #00d9ff; color:#00d9ff; margin-top:10px;"></div>
+        </div>
+        
+        <!-- Painel para Pergunta Customizada com System Prompt -->
+        <div style="margin-top:20px; padding:15px; background:#0f3460; border-radius:8px; border:1px solid #333;">
+            <h3 style="color:#00d9ff; margin-bottom:15px;">🎯 Pergunta Customizada com Prompt</h3>
+            <div class="lmstudio-grid">
+                <div style="grid-column: 1 / -1;">
+                    <label for="customSystemPrompt">System Prompt (instruções para o modelo):</label>
+                    <textarea id="customSystemPrompt" style="width:100%; padding:10px; border-radius:4px; border:1px solid #333; background:#1a2744; color:#eee; font-size:14px; min-height:80px; font-family:monospace;" placeholder="Ex: Você é um especialista em..."></textarea>
+                    <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+                        <button style="padding:6px 12px; background:#2d1f33; border:1px solid #00d9ff; color:#00d9ff; border-radius:4px; cursor:pointer; font-size:12px;" onclick="loadTemplate('research')">📚 Template: Pesquisa & Verificação</button>
+                        <button style="padding:6px 12px; background:#2d1f33; border:1px solid #00d9ff; color:#00d9ff; border-radius:4px; cursor:pointer; font-size:12px;" onclick="loadTemplate('analysis')">🔬 Template: Análise Profunda</button>
+                        <button style="padding:6px 12px; background:#2d1f33; border:1px solid #00d9ff; color:#00d9ff; border-radius:4px; cursor:pointer; font-size:12px;" onclick="loadTemplate('summary')">📝 Template: Resumo</button>
+                    </div>
+                </div>
+                <div style="grid-column: 1 / -1;">
+                    <label for="customQuestion">Pergunta:</label>
+                    <textarea id="customQuestion" style="width:100%; padding:10px; border-radius:4px; border:1px solid #333; background:#1a2744; color:#eee; font-size:14px; min-height:80px;" placeholder="Digite sua pergunta aqui..."></textarea>
+                </div>
+            </div>
+            <button class="save-btn" style="background:#ff8800; margin-top:10px; width:100%;" onclick="sendCustomPrompt()">📤 Enviar Pergunta</button>
+            <div id="customPromptResult" style="display:none; margin-top:15px; padding:15px; background:#1a2744; border-radius:8px; border:1px solid #333;">
+                <h4 style="color:#00d9ff; margin-bottom:10px;">Resposta:</h4>
+                <div id="customPromptText" style="color:#00ff88; white-space:pre-wrap; word-wrap:break-word; font-family:monospace; font-size:0.9rem; max-height:400px; overflow-y:auto;"></div>
+            </div>
+        </div>
+        
+        <div class="upload-area" id="dropZone">
+            <div class="upload-icon">📁</div>
+            <div class="upload-text">Arraste e solte seu arquivo de áudio aqui</div>
+            <div class="upload-hint">ou clique para selecionar (MP3, WAV, OGG, M4A, FLAC)</div>
+            <input type="file" id="fileInput" accept=".mp3,.wav,.ogg,.m4a,.flac">
+        </div>
+        
+        <div class="recording-area" id="recordingArea">
+            <div class="record-icon">⏺</div>
+            <div class="record-text">Clique para gravar do microfone</div>
+            <div class="upload-hint" style="margin-top: 10px;">(Requer permissão de mic e HTTPS ou localhost)</div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <div class="status" id="statusText">Processando...</div>
+        </div>
+
+        <div class="model-info" id="modelInfo"></div>
+
+        <div class="error" id="errorMessage"></div>
+
+        <div class="result-area" id="resultArea">
+            <div class="result-label">Transcrição:</div>
+            <div class="result-text" id="resultText"></div>
+        </div>
+        
+        <!-- Área de Resultado da IA -->
+        <div class="ai-result-area" id="aiResultArea">
+            <div class="ai-result-header">
+                <div class="ai-result-label">🤖 Análise com IA:</div>
+                <span class="ai-model-badge" id="aiModelBadge"></span>
+            </div>
+            <div class="result-text ai-result-text" id="aiResultText"></div>
+        </div>
+        
+        <!-- Área de Análise Completa -->
+        <div class="analysis-result-area" id="analysisResultArea">
+            <div class="analysis-header">
+                <div class="analysis-title">🔬 Análise Completa com Pesquisa e Verificação</div>
+                <span class="analysis-model-badge" id="analysisModelBadge"></span>
+            </div>
+            <div class="analysis-grid">
+                <div class="analysis-card">
+                    <h4>📝 Resumo Executivo</h4>
+                    <p id="summaryText"></p>
+                </div>
+                <div class="analysis-card">
+                    <h4>🎯 Temas Principais</h4>
+                    <ul id="topicsList"></ul>
+                </div>
+                <div class="analysis-card">
+                    <h4>👥 Entidades Mencionadas</h4>
+                    <ul id="entitiesList"></ul>
+                </div>
+                <div class="analysis-card">
+                    <h4>💡 Análise Detalhada</h4>
+                    <p id="analysisText"></p>
+                </div>
+                <div class="analysis-card">
+                    <h4>🔍 Conclusões e Recomendações</h4>
+                    <p id="conclusionsText"></p>
+                </div>
+                <div class="analysis-card">
+                    <h4>✨ Insights Principais</h4>
+                    <p id="insightsText"></p>
+                </div>
+            </div>
+            <!-- Fact Checks -->
+            <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #333;">
+                <h4 style="color:#00d9ff; margin-bottom:10px;">📋 Verificação de Fatos</h4>
+                <div id="factChecksContainer"></div>
+            </div>
+            
+            <!-- Botão de Download -->
+            <div style="margin-top: 15px; text-align: center;">
+                <button onclick="downloadAnalysis()" style="background:#00d9ff; color:#000; border:none; padding:10px 20px; border-radius:6px; cursor:pointer; font-weight:bold;">📥 Baixar Resultado em JSON</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const recordingArea = document.getElementById('recordingArea');
+        const fileInput = document.getElementById('fileInput');
+        const modelSelect = document.getElementById('modelSelect');
+        const recordBtn = document.getElementById('recordBtn');
+        const loading = document.getElementById('loading');
+        const statusText = document.getElementById('statusText');
+        const resultArea = document.getElementById('resultArea');
+        const resultText = document.getElementById('resultText');
+        const errorMessage = document.getElementById('errorMessage');
+        const modelInfo = document.getElementById('modelInfo');
+        const lmstudioPanel = document.getElementById('lmstudioPanel');
+        const saveStatus = document.getElementById('saveStatus');
+        const aiResultArea = document.getElementById('aiResultArea');
+        const aiModelBadge = document.getElementById('aiModelBadge');
+        const aiResultText = document.getElementById('aiResultText');
+        const connectionStatus = document.getElementById('connectionStatus');
+
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        let currentModel = 'base';
+        
+        // Configurações padrão do LM Studio (podem ser sobrescritas pelo endpoint /api/config-lmstudio)
+        let lmstudioConfig = {
+            url: 'http://localhost:1234',
+            model: 'llama3.2:3b',
+            token: '',
+            prompt_type: 'auto_research',
+            temperature: 0.7,
+            max_tokens: 2000
+        };
+
+        // Check de conexão ao carregar
+        async function checkConnection() {
+            showConnectionStatus('Verificando conexão com LM Studio...');
+            
+            try {
+                const response = await fetch(`${lmstudioConfig.url}/v1/models`);
+                
+                if (response.status === 200 || response.ok) {
+                    const data = await response.json();
+                    showConnectionStatus(`✅ Conectado! Servidor: ${lmstudioConfig.url}`, 'success');
+                    return true;
+                } else {
+                    throw new Error('Status HTTP inválido');
+                }
+            } catch (error) {
+                console.error('Erro de conexão:', error);
+                showConnectionStatus(`❌ Erro: Não foi possível conectar ao LM Studio. Verifique se o servidor está rodando e a URL está correta.<br><small>${error.message}</small>`, 'error');
+                return false;
+            }
+        }
+
+        // Carrega lista de modelos disponíveis da API (chamado APÓS salvar)
+        async function fetchModels() {
+            showConnectionStatus('Carregando modelos do servidor...');
+            
+            try {
+                // Constrói headers com token se fornecido
+                const headers = {};
+                if (lmstudioConfig.token) {
+                    headers['Authorization'] = `Bearer ${lmstudioConfig.token}`;
+                    headers['Content-Type'] = 'application/json';
+                }
+                
+                const response = await fetch(`${lmstudioConfig.url}/v1/models`, { headers });
+                
+                if (!response.ok) {
+                    throw new Error(`Erro HTTP: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const modelsContainer = document.getElementById('lmstudioModelSelect');
+                
+                // Limpa dropdown
+                modelsContainer.innerHTML = '';
+                
+                if (data.data && Array.isArray(data.data)) {
+                    data.data.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.id;
+                        option.textContent = model.id || model.name || `Modelo ${model.size}`;
+                        modelsContainer.appendChild(option);
+                    });
+                    
+                    // Seleciona primeiro modelo
+                    if (modelsContainer.options.length > 0) {
+                        modelsContainer.selectedIndex = 0;
+                        lmstudioConfig.model = modelsContainer.value;
+                        showConnectionStatus(`✅ Carregado: ${modelsContainer.options[0].textContent}`, 'success');
+                    }
+                } else if (data.id) {
+                    // Resposta direta com ID do modelo
+                    const option = document.createElement('option');
+                    option.value = data.id;
+                    option.textContent = data.id || data.name || 'Modelo selecionado';
+                    modelsContainer.appendChild(option);
+                    modelsContainer.selectedIndex = 0;
+                    lmstudioConfig.model = data.id;
+                    showConnectionStatus(`✅ Carregado: ${data.id}`, 'success');
+                } else {
+                    throw new Error('Formato de resposta inválido');
+                }
+            } catch (error) {
+                console.error('Erro ao buscar modelos:', error);
+                showConnectionStatus(`⚠️ Não foi possível carregar modelos. Selecione manualmente no dropdown.<br><small>Verifique se o servidor LM Studio está respondendo na porta 1234</small>`, 'error');
+            }
+        }
+
+        // Mostra status de conexão
+        function showConnectionStatus(message, type = '') {
+            connectionStatus.innerHTML = message;
+            connectionStatus.className = `connection-status ${type}`;
+        }
+
+        // Inicializa com modelo selecionado (funcionalidade Whisper)
+        modelSelect.addEventListener('change', (e) => {
+            currentModel = e.target.value;
+            loadModel(currentModel);
+            
+            const modelSizes = {
+                'tiny': '~39M parâmetros',
+                'base': '~74M parâmetros',
+                'small': '~244M parâmetros',
+                'medium': '~769M parâmetros',
+                'large-v3': '~1.55B parâmetros',
+                'turbo': '~809M parâmetros (otimizado)'
+            };
+            
+            const suffixModels = {
+                '.en': '(otimizado para inglês)',
+                '': ''
+            };
+            
+            modelInfo.style.display = 'block';
+            modelInfo.textContent = `Modelo: ${currentModel}${suffixModels[currentModel.includes('.en') ? '.en' : ''] || ''} - ${modelSizes[currentModel] || ''}`;
+        });
+
+        async function loadModel(model) {
+            try {
+                const response = await fetch(`/api/load-model?model=${model}`);
+                const data = await response.json();
+                
+                if (data.status === 'ok') {
+                    modelInfo.style.display = 'block';
+                    modelInfo.textContent = `✅ Modelo: ${model} carregado`;
+                } else if (data.status === 'error') {
+                    modelInfo.style.display = 'block';
+                    modelInfo.textContent = `⚠️ Modelo: ${model} - ${data.error}`;
+                }
+            } catch (error) {
+                console.error('Erro ao carregar modelo:', error);
+                modelInfo.style.display = 'block';
+                modelInfo.textContent = `❌ Erro: ${error.message}`;
+            }
+        }
+
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) handleFile(file);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) handleFile(file);
+        });
+
+        async function handleFile(file) {
+            showLoading(`Arquivo: ${file.name}`);
+            errorMessage.style.display = 'none';
+
+            const formData = new FormData();
+            formData.append('audio', file);
+            formData.append('model', currentModel);
+
+            try {
+                const response = await fetch('/upload', { method: 'POST', body: formData });
+                const data = await response.json();
+                
+                loading.style.display = 'none';
+                
+                if (data.error) {
+                    errorMessage.textContent = data.error;
+                    errorMessage.style.display = 'block';
+                } else {
+                    resultText.textContent = data.text;
+                    resultArea.style.display = 'block';
+                    
+                    const modelSizes = {
+                        'tiny': '~39M',
+                        'base': '~74M',
+                        'small': '~244M',
+                        'medium': '~769M',
+                        'large-v3': '~1.55B',
+                        'turbo': '~809M'
+                    };
+                    
+                    modelInfo.textContent = `Modelo: ${currentModel} (${modelSizes[currentModel] || ''}) | Tempo: ${(data.duration || 0).toFixed(2)}s`;
+                }
+            } catch (error) {
+                loading.style.display = 'none';
+                errorMessage.textContent = 'Erro na transcrição. Verifique os logs do servidor.';
+                errorMessage.style.display = 'block';
+            }
+        }
+
+        async function toggleRecording() {
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    
+                    mediaRecorder.ondataavailable = (event) => {
+                        audioChunks.push(event.data);
+                    };
+
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        audioChunks = [];
+                        
+                        dropZone.style.display = 'none';
+                        recordingArea.style.display = 'block';
+                        recordingArea.classList.remove('recording');
+                        
+                        const file = new File([audioBlob], 'recording.wav', { type: 'audio/wav' });
+                        handleFile(file);
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    recordBtn.textContent = '⏹ Parar Gravação';
+                    recordBtn.classList.add('recording');
+                    recordingArea.classList.add('recording');
+                    recordingArea.querySelector('.record-text').textContent = 'Gravando...';
+                    
+                } catch (error) {
+                    alert('Erro ao acessar microfone: ' + error.message);
+                }
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                recordBtn.textContent = '🎤 Gravar Áudio';
+                recordBtn.classList.remove('recording');
+                recordingArea.classList.remove('recording');
+                recordingArea.querySelector('.record-text').textContent = 'Clique para gravar do microfone';
+            }
+        }
+
+        function showLoading(text) {
+            loading.style.display = 'block';
+            statusText.textContent = text;
+        }
+        
+        // Processa texto transcrito com IA do LM Studio
+        async function processWithAI() {
+            if (!resultText.textContent) return;
+            
+            showLoading('Processando com IA do LM Studio...');
+            aiResultArea.style.display = 'block';
+            errorMessage.style.display = 'none';
+            saveStatus.style.display = 'none';
+            
+            // Constrói headers com token se fornecido
+            const headers = {};
+            if (lmstudioConfig.token) {
+                headers['Authorization'] = `Bearer ${lmstudioConfig.token}`;
+            }
+            
+            // Cria FormData para envio
+            const formData = new FormData();
+            formData.append('text', resultText.textContent);
+            formData.append('model', lmstudioConfig.model);
+            
+            try {
+                const response = await fetch('/api/process-with-ai', { method: 'POST', headers, body: formData });
+                
+                const data = await response.json();
+                
+                loading.style.display = 'none';
+                
+                if (data.status === 'ok') {
+                    aiModelBadge.textContent = `Modelo: ${data.model_used}`;
+                    aiResultText.textContent = data.result;
+                    
+                    // Salva configurações globais
+                    lmstudioConfig.model = data.model_used;
+                    lmstudioConfig.prompt_type = data.prompt_type || lmstudioConfig.prompt_type;
+                } else if (data.status === 'error') {
+                    errorMessage.textContent = `Erro: ${data.message}`;
+                    errorMessage.style.display = 'block';
+                }
+            } catch (error) {
+                loading.style.display = 'none';
+                errorMessage.textContent = 'Erro ao processar com IA. Verifique os logs do servidor.';
+                errorMessage.style.display = 'block';
+            }
+        }
+        
+        // Salva configurações do LM Studio no servidor
+        async function saveLmstudioConfig() {
+            const url = document.getElementById('lmstudioUrl').value;
+            const modelSelect = document.getElementById('lmstudioModelSelect');
+            const model = modelSelect.value;
+            const token = document.getElementById('lmstudioToken').value;
+            const promptType = document.getElementById('lmstudioPromptType').value;
+            const temperature = parseFloat(document.getElementById('lmstudioTemperature').value);
+            const maxTokens = parseInt(document.getElementById('lmstudioMaxTokens').value);
+            
+            try {
+                saveStatus.style.display = 'none';
+                const response = await fetch('/api/config-lmstudio', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url, model, token, prompt_type: promptType,
+                        temperature, max_tokens: maxTokens
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'ok') {
+                    // Atualiza objeto global (mantém modelo exato)
+                    lmstudioConfig.url = url;
+                    lmstudioConfig.model = model;
+                    lmstudioConfig.token = token;
+                    lmstudioConfig.prompt_type = promptType;
+                    lmstudioConfig.temperature = temperature;
+                    lmstudioConfig.max_tokens = maxTokens;
+                    
+                    saveStatus.textContent = '✅ Configuração salva!';
+                    saveStatus.style.display = 'block';
+                    
+                    // CARREGA MODELOS APÓS SALVAR
+                    await fetchModels();
+                } else if (data.status === 'error') {
+                    saveStatus.textContent = `❌ Erro: ${data.message}`;
+                    saveStatus.style.backgroundColor = '#a33';
+                    saveStatus.style.color = '#fff';
+                    saveStatus.style.border = '1px solid #e55';
+                    saveStatus.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Erro ao salvar:', error);
+                saveStatus.textContent = '❌ Erro ao salvar configuração. Verifique os logs do servidor.';
+                saveStatus.style.backgroundColor = '#a33';
+                saveStatus.style.color = '#fff';
+                saveStatus.style.border = '1px solid #e55';
+                saveStatus.style.display = 'block';
+            }
+        }
+        
+        async function testMcpSearch() {
+            const query = prompt('Digite pergunta para testar MCP:\nExemplo: "Que dia eh hoje com hora"');
+            if (!query) return;
+            
+            showLoading('Testando MCP Search...');
+            try {
+                const response = await fetch('/api/test-mcp-search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, max_tokens: 6000 })
+                });
+                
+                const data = await response.json();
+                loading.style.display = 'none';
+                
+                if (data.status === 'ok') {
+                    let mcpStatus = 'NAO';
+                    if (data.mcp_detected) {
+                        const types = [...new Set(data.tool_calls.map(t => t.type))];
+                        if (types.includes('searxng_json')) {
+                            mcpStatus = 'SIM (SearXNG)';
+                        } else if (types.includes('structured')) {
+                            mcpStatus = 'SIM (Estruturado)';
+                        } else if (types.includes('attempted_json') || types.includes('mcp_standard')) {
+                            mcpStatus = 'PARCIAL';
+                        }
+                    } else if (data.mcp_attempted) {
+                        mcpStatus = 'TENTADO';
+                    }
+                    
+                    const toolDetails = data.tool_calls.length > 0
+                        ? data.tool_calls.map(t => `${t.function} [${t.type}]`).join('\n  ')
+                        : 'nenhuma';
+                    
+                    const resultado = `MCP Search Test Result
+${'='.repeat(60)}
+
+PERGUNTA: ${query}
+
+RESULTADO:
+- MCP Status: ${mcpStatus}
+- Ferramentas Detectadas:
+  ${toolDetails}
+- Queries Extraidas: ${data.search_queries.length > 0 
+                        ? data.search_queries.map(q => `"${q}"`).join(', ')
+                        : 'nenhuma'}
+
+TOKENS:
+- Total: ${data.token_usage.total} | Completion: ${data.token_usage.completion} | Prompt: ${data.token_usage.prompt}
+
+RESPOSTA (primeiros 1500 chars):
+${'-'.repeat(60)}
+${data.response.substring(0, 1500)}
+${data.response.length > 1500 ? '...' : ''}
+
+${'='.repeat(60)}
+
+ANALISE:
+${data.mcp_detected 
+    ? '✓ MCP foi acionado'
+    : (data.mcp_attempted 
+        ? '⚠ MCP foi tentado mas formato incorreto' 
+        : '✗ MCP nao foi acionado')}`;
+                    
+                    alert(resultado);
+                    console.log('Dados completos:', data);
+                } else {
+                    alert('Erro: ' + data.message);
+                }
+            } catch (error) {
+                loading.style.display = 'none';
+                alert('Erro: ' + error.message);
+            }
+        }
+        
+        // Listener para mudanças no modelo LM Studio - salva automaticamente
+        function reattachModelListener() {
+            const modelSelect = document.getElementById('lmstudioModelSelect');
+            modelSelect.addEventListener('change', onLmstudioModelChange);
+        }
+        
+        // Função nomeada para listener
+        function onLmstudioModelChange(e) {
+            const newModel = e.target.value;
+            lmstudioConfig.model = newModel;
+            console.log('Modelo LM Studio alterado para:', newModel);
+            
+            // Salva automaticamente
+            const url = document.getElementById('lmstudioUrl').value;
+            const token = document.getElementById('lmstudioToken').value;
+            const promptType = document.getElementById('lmstudioPromptType').value;
+            const temperature = parseFloat(document.getElementById('lmstudioTemperature').value);
+            const maxTokens = parseInt(document.getElementById('lmstudioMaxTokens').value);
+            
+            fetch('/api/config-lmstudio', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    url, model: newModel, token, prompt_type: promptType,
+                    temperature, max_tokens: maxTokens
+                })
+            }).then(r => r.json()).then(data => {
+                if (data.status === 'ok') {
+                    console.log('Modelo salvo:', newModel);
+                }
+            }).catch(err => console.error('Erro ao salvar modelo:', err));
+        }
+        
+        // Envia pergunta customizada com system prompt
+        async function sendCustomPrompt() {
+            const systemPrompt = document.getElementById('customSystemPrompt').value;
+            const question = document.getElementById('customQuestion').value;
+            
+            if (!systemPrompt || !question) {
+                alert('Preencha tanto o system prompt quanto a pergunta!');
+                return;
+            }
+            
+            showLoading('Enviando pergunta para o LM Studio...');
+            document.getElementById('customPromptResult').style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/ask-with-prompt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        system_prompt: systemPrompt,
+                        question: question,
+                        temperature: lmstudioConfig.temperature,
+                        max_tokens: lmstudioConfig.max_tokens
+                    })
+                });
+                
+                const data = await response.json();
+                loading.style.display = 'none';
+                
+                if (data.status === 'ok') {
+                    document.getElementById('customPromptText').textContent = data.response;
+                    document.getElementById('customPromptResult').style.display = 'block';
+                } else {
+                    alert('Erro: ' + data.message);
+                }
+            } catch (error) {
+                loading.style.display = 'none';
+                console.error('Erro:', error);
+                alert('Erro ao enviar pergunta: ' + error.message);
+            }
+        }
+        
+        // Carrega templates de system prompt
+        function loadTemplate(templateType) {
+            const templates = {
+                research: `Você é um especialista em pesquisa, verificação de fatos e análise crítica de informações.
+
+SUAS RESPONSABILIDADES:
+1. **Análise de Contexto**: Leia cuidadosamente o conteúdo fornecido
+2. **Identificar Afirmações Factuais**: Extraia todas as afirmações verificáveis
+3. **Pesquisar Fatos**: Pesquise na internet para verificar cada afirmação importante
+4. **Verificar Credibilidade**: Identifique fontes confiáveis vs. especulações
+5. **Estruturar Resposta**: Organize em seções claras
+
+FORMATO DE RESPOSTA:
+- **Resumo do Contexto**: Síntese breve
+- **Fatos Verificados**: ✅ Fatos confirmados com fontes
+- **Fatos Questionáveis**: ⚠️ Afirmações que precisam verificação
+- **Possíveis Erros**: ❌ Informações incorretas ou enganosas
+- **Recomendações**: Sugestões para melhorar a credibilidade
+
+Seja rigoroso na verificação. Cite as fontes sempre que possível.`,
+
+                analysis: `Você é um analista especializado em análise profunda e pensamento crítico.
+
+SUAS RESPONSABILIDADES:
+1. **Compreender Profundamente**: Analise o contexto em múltiplos níveis
+2. **Identificar Padrões**: Procure por padrões, conexões e implicações
+3. **Questionar Pressupostos**: Desafie a validade das premissas
+4. **Explorar Alternativas**: Considere diferentes perspectivas
+5. **Extrair Insights**: Gere insights originais e perspicazes
+
+ESTRUTURA DE ANÁLISE:
+- **Compreensão Inicial**: O que está sendo dito?
+- **Análise Profunda**: Por quê? Como? Qual o contexto?
+- **Padrões e Conexões**: Que relacionamentos existem?
+- **Questões Críticas**: O que pode estar errado ou faltando?
+- **Insights Principais**: Qual é a conclusão mais importante?
+- **Recomendações**: Próximos passos ou considerações
+
+Seja analítico, imparcial e baseado em evidências.`,
+
+                summary: `Você é um especialista em resumo executivo e síntese de informações.
+
+SUAS RESPONSABILIDADES:
+1. **Compreender o Essencial**: Identifique os pontos-chave
+2. **Descartar o Supérfluo**: Remova detalhes desnecessários
+3. **Manter Precisão**: Preserve a informação crítica
+4. **Ser Conciso**: Use linguagem direta e clara
+5. **Estruturar Logicamente**: Organize de forma hierárquica
+
+ESTRUTURA DO RESUMO:
+- **Essência** (1-2 linhas): O que é isso em poucas palavras?
+- **Pontos Principais** (3-5 itens): As ideias centrais
+- **Contexto Importante**: O que você precisa saber para entender
+- **Implicações**: Por que isso importa?
+- **Próximos Passos**: O que fazer com essa informação?
+
+Seja objetivo e eficiente.`
+            };
+            
+            const prompt = templates[templateType] || '';
+            document.getElementById('customSystemPrompt').value = prompt;
+            document.getElementById('customSystemPrompt').scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        // Inicializa listener na primeira carga
+        reattachModelListener();
+        
+        // Carrega configurações salvas do servidor ao abrir a página
+        async function loadSavedConfig() {
+            try {
+                const response = await fetch('/api/load-lmstudio-config');
+                const data = await response.json();
+                
+                if (data.status === 'ok' && data.config) {
+                    lmstudioConfig = {
+                        url: data.config.url || lmstudioConfig.url,
+                        model: data.config.model || lmstudioConfig.model,
+                        token: data.config.token || lmstudioConfig.token,
+                        prompt_type: data.config.prompt_type || lmstudioConfig.prompt_type,
+                        temperature: data.config.temperature || lmstudioConfig.temperature,
+                        max_tokens: data.config.max_tokens || lmstudioConfig.max_tokens
+                    };
+                    
+                    // Atualiza campos do formulário
+                    document.getElementById('lmstudioUrl').value = lmstudioConfig.url;
+                    document.getElementById('lmstudioToken').value = lmstudioConfig.token;
+                    document.getElementById('lmstudioPromptType').value = lmstudioConfig.prompt_type;
+                    document.getElementById('lmstudioTemperature').value = lmstudioConfig.temperature;
+                    document.getElementById('lmstudioMaxTokens').value = lmstudioConfig.max_tokens;
+                    
+                    logger.info('Config salva carregada:', lmstudioConfig);
+                    console.log('Config salva carregada:', lmstudioConfig);
+                    
+                    // Carrega modelos disponíveis
+                    await fetchModels();
+                } else {
+                    // Sem config salva, apenas checa conexão
+                    await checkConnection();
+                    await fetchModels();
+                }
+            } catch (error) {
+                console.error('Erro ao carregar config salva:', error);
+                await checkConnection();
+                await fetchModels();
+            }
+        }
+        
+        // Carrega config ao abrir a página
+        window.addEventListener('load', loadSavedConfig);
+    </script>
+
+    <script>
+        // Função para baixar resultado em JSON
+        function downloadAnalysis() {
+            const analysis = document.getElementById('analysisResultArea');
+            if (!analysis) return;
+            
+            // Coleta todos os dados das áreas
+            const data = {
+                summary: document.getElementById('summaryText').textContent,
+                topics: Array.from(document.querySelectorAll('#topicsList li')).map(li => li.textContent),
+                entities: Array.from(document.querySelectorAll('#entitiesList li')).map(li => li.textContent),
+                detailed_analysis: document.getElementById('analysisText').textContent,
+                conclusions: document.getElementById('conclusionsText').textContent,
+                key_insights: document.getElementById('insightsText').textContent,
+                fact_checks: []
+            };
+            
+            // Extrai fact checks do HTML
+            const factCheckItems = document.querySelectorAll('#factChecksContainer .fact-check-item');
+            factCheckItems.forEach(item => {
+                const claim = item.querySelector('.fact-check-claim').textContent.replace(/"/g, '');
+                const status = item.querySelector('.fact-check-status').textContent;
+                const verified = status.includes('✅') ? true : (status.includes('❓') ? null : false);
+                data.fact_checks.push({ claim, verified, source: status });
+            });
+            
+            // Cria e downloada arquivo JSON
+            const jsonStr = JSON.stringify(data, null, 2);
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `analise-${Date.now()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+
+    <script>
+        // Função para processar transcrição e análise completa
+        async function processTranscriptionAndAnalysis() {
+            if (!resultText.textContent) return;
+            
+            showLoading('Transcrevendo e analisando com IA...');
+            analysisResultArea.style.display = 'block';
+            errorMessage.style.display = 'none';
+            saveStatus.style.display = 'none';
+            
+            // Constrói headers com token se fornecido
+            const headers = {};
+            if (lmstudioConfig.token) {
+                headers['Authorization'] = `Bearer ${lmstudioConfig.token}`;
+            }
+            
+            // Cria FormData para envio
+            const formData = new FormData();
+            formData.append('audio', fileInput.files[0]);
+            formData.append('model', currentModel);
+            
+            try {
+                const response = await fetch('/api/transcribe-and-analyze', { method: 'POST', headers, body: formData });
+                const data = await response.json();
+                
+                loading.style.display = 'none';
+                
+                if (data.status === 'ok') {
+                    analysisModelBadge.textContent = `Modelo: ${data.model_used}`;
+                    
+                    // Preenche os campos de análise
+                    const analysis = data.analysis;
+                    
+                    summaryText.textContent = analysis.summary || '';
+                    topicsList.innerHTML = analysis.topics && Array.isArray(analysis.topics) ? 
+                        analysis.topics.map(t => `<li>${t}</li>`).join('') : '';
+                    entitiesList.innerHTML = analysis.entities && Array.isArray(analysis.entities) ? 
+                        analysis.entities.slice(0, 10).map(e => `<li>${e}</li>`).join('') : '';
+                    analysisText.textContent = analysis.detailed_analysis || '';
+                    conclusionsText.textContent = analysis.conclusions || '';
+                    insightsText.textContent = analysis.key_insights || '';
+                    
+                    // Fator checks
+                    const factChecksDiv = document.getElementById('factChecksContainer');
+                    if (analysis.fact_checks && Array.isArray(analysis.fact_checks)) {
+                        factChecksDiv.innerHTML = analysis.fact_checks.map(fc => `
+                            <div class="fact-check-item ${fc.verified ? 'fact-check-verified' : 'fact-check-unverified'}">
+                                <div class="fact-check-claim">"${fc.claim}"</div>
+                                <div class="fact-check-status">${fc.verified ? '✅ Verificado' : (fc.source || '❓ Não verificado')}</div>
+                            </div>
+                        `).join('');
+                    } else {
+                        factChecksDiv.innerHTML = '<p style="color:#888; font-size:0.85rem;">Nenhuma verificação de fatos necessária</p>';
+                    }
+                } else if (data.status === 'error') {
+                    errorMessage.textContent = `Erro: ${data.message}`;
+                    errorMessage.style.display = 'block';
+                }
+            } catch (error) {
+                loading.style.display = 'none';
+                console.error('Erro:', error);
+                errorMessage.textContent = 'Erro ao transcrever e analisar. Verifique os logs do servidor.';
+                errorMessage.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>
